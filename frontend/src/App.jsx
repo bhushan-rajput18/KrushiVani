@@ -1,5 +1,4 @@
-
-import { useState } from "react";
+import { useRef, useState } from "react";
 import "./App.css";
 
 function App() {
@@ -7,21 +6,30 @@ function App() {
     const [loading, setLoading] = useState(false);
     const [listening, setListening] = useState(false);
 
+    // Image states
+    const [imageLoading, setImageLoading] = useState(false);
+    const [selectedImage, setSelectedImage] = useState(null);
+
+    const fileInputRef = useRef(null);
+
     const [messages, setMessages] = useState([
         {
             sender: "bot",
-            text: "नमस्कार! 👋 मी ShetiMitra आहे. केळी शेतीबद्दल तुमची मदत करण्यासाठी मी इथे आहे."
+            text: "🌱 कृषीवाणी तुमच्या शेतीसाठी मदत करेल."
         }
     ]);
 
+    // =========================
     // 🎤 Voice Input
+    // =========================
+
     const startListening = () => {
         const SpeechRecognition =
             window.SpeechRecognition ||
             window.webkitSpeechRecognition;
 
         if (!SpeechRecognition) {
-            alert("तुमच्या ब्राउझरमध्ये Voice Input उपलब्ध नाही.");
+            alert("तुमच्या ब्राउझरमध्ये आवाजाची सुविधा उपलब्ध नाही.");
             return;
         }
 
@@ -36,12 +44,18 @@ function App() {
         };
 
         recognition.onresult = (event) => {
-            const transcript = event.results[0][0].transcript;
+            const transcript =
+                event.results[0][0].transcript;
+
             setQuestion(transcript);
         };
 
         recognition.onerror = (event) => {
-            console.error("Speech recognition error:", event.error);
+            console.error(
+                "Speech recognition error:",
+                event.error
+            );
+
             setListening(false);
         };
 
@@ -52,7 +66,10 @@ function App() {
         recognition.start();
     };
 
-    // 💬 Send question
+    // =========================
+    // 💬 Send Question
+    // =========================
+
     const sendQuestion = async (text = question) => {
         if (!text.trim() || loading) return;
 
@@ -92,6 +109,7 @@ function App() {
                     text: data.answer
                 }
             ]);
+
         } catch (error) {
             console.error(error);
 
@@ -102,15 +120,141 @@ function App() {
                     text: "सर्व्हरशी कनेक्ट होता आले नाही. कृपया पुन्हा प्रयत्न करा."
                 }
             ]);
-        }
 
-        setLoading(false);
+        } finally {
+            setLoading(false);
+        }
     };
 
-    // Quick question
+    // =========================
+    // 📷 Image Upload
+    // =========================
+
+    const openImagePicker = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleImageUpload = async (event) => {
+        const file = event.target.files[0];
+
+        if (!file) return;
+
+        setSelectedImage(file);
+
+        setImageLoading(true);
+
+        // Show image sent message
+        setMessages((previousMessages) => [
+            ...previousMessages,
+            {
+                sender: "user",
+                text: "📷 पिकाचा फोटो पाठवला आहे."
+            }
+        ]);
+
+        const formData = new FormData();
+
+        formData.append("image", file);
+
+        try {
+            const response = await fetch(
+                "http://localhost:5000/api/image",
+                {
+                    method: "POST",
+                    body: formData
+                }
+            );
+
+            const data = await response.json();
+
+            let message = "";
+
+            if (data.prediction === "uncertain") {
+
+                message =
+                    "⚠️ " +
+                    data.message;
+
+            } else {
+
+                let diseaseName = data.prediction;
+
+                // Convert model names into simple Marathi
+                if (diseaseName === "healthy") {
+                    diseaseName = "केळीचे झाड निरोगी दिसत आहे 🌱";
+                }
+
+                else if (
+                    diseaseName === "fusarium_wilt"
+                ) {
+                    diseaseName =
+                        "फ्युजेरियम विल्ट (पनामा रोग)";
+                }
+
+                else if (
+                    diseaseName === "yellow_sigatoka"
+                ) {
+                    diseaseName =
+                        "यलो सिगाटोका";
+                }
+
+                message =
+                    "🔍 फोटो तपासला आहे.\n\n" +
+                    "📌 ओळख: " +
+                    diseaseName +
+                    "\n\n" +
+                    "📊 विश्वास: " +
+                    data.confidence.toFixed(2) +
+                    "%";
+
+                // Low confidence safety message
+                if (data.confidence < 70) {
+                    message +=
+                        "\n\n⚠️ फोटोवरून खात्रीने सांगता येत नाही. अधिक स्पष्ट फोटो द्या.";
+                }
+            }
+
+            setMessages((previousMessages) => [
+                ...previousMessages,
+                {
+                    sender: "bot",
+                    text: message
+                }
+            ]);
+
+        } catch (error) {
+
+            console.error(error);
+
+            setMessages((previousMessages) => [
+                ...previousMessages,
+                {
+                    sender: "bot",
+                    text:
+                        "❌ फोटो तपासता आला नाही.\nकृपया पुन्हा फोटो पाठवा."
+                }
+            ]);
+
+        } finally {
+
+            setImageLoading(false);
+
+            // Allow same image to be selected again
+            event.target.value = "";
+        }
+    };
+
+    // =========================
+    // Quick Question
+    // =========================
+
     const quickQuestion = (text) => {
         setQuestion(text);
     };
+
+    // =========================
+    // UI
+    // =========================
 
     return (
         <div className="app">
@@ -120,14 +264,19 @@ function App() {
             <header className="topbar">
 
                 <div className="brand">
+
                     <div className="brand-icon">
                         🌱
                     </div>
 
                     <div>
-                        <h1>ShetiMitra</h1>
-                        <span>शेतकऱ्यांचा डिजिटल मित्र</span>
+                        <h1>कृषीवाणी</h1>
+
+                        <span>
+                            शेतकऱ्यांचा डिजिटल मित्र
+                        </span>
                     </div>
+
                 </div>
 
                 <div className="status">
@@ -142,7 +291,7 @@ function App() {
 
             <main className="main">
 
-                {/* Hero */}
+                {/* ================= HERO ================= */}
 
                 <section className="hero">
 
@@ -153,12 +302,13 @@ function App() {
                         </span>
 
                         <h2>
-                            नमस्कार !👋
+                            तुमच्या शेतीची मदत इथे मिळवा
                         </h2>
 
                         <p>
-                            तुमच्या केळी पिकाबद्दल प्रश्न विचारा,
-                            आवाजात बोला किंवा पिकाचा फोटो पाठवा.
+                            🎤 बोलून विचारा
+                            <br />
+                            📷 पिकाचा फोटो पाठवा
                         </p>
 
                     </div>
@@ -170,11 +320,13 @@ function App() {
                 </section>
 
 
-                {/* ================= FEATURE CARDS ================= */}
+                {/* ================= MAIN ACTIONS ================= */}
 
                 <section className="feature-section">
 
-                    <h3>तुम्हाला कशात मदत हवी?</h3>
+                    <h3>
+                        तुम्हाला काय करायचे आहे?
+                    </h3>
 
                     <div className="feature-grid">
 
@@ -183,6 +335,10 @@ function App() {
                         <button
                             className="feature-card voice-card"
                             onClick={startListening}
+                            disabled={
+                                loading ||
+                                listening
+                            }
                         >
 
                             <div className="feature-icon">
@@ -190,8 +346,13 @@ function App() {
                             </div>
 
                             <div>
-                                <strong>बोलून विचारा</strong>
-                                <p>मराठीत प्रश्न विचारा</p>
+                                <strong>
+                                    बोलून विचारा
+                                </strong>
+
+                                <p>
+                                    मराठीत बोला
+                                </p>
                             </div>
 
                         </button>
@@ -201,9 +362,8 @@ function App() {
 
                         <button
                             className="feature-card photo-card"
-                            onClick={() =>
-                                alert("Photo upload feature लवकरच येत आहे.")
-                            }
+                            onClick={openImagePicker}
+                            disabled={imageLoading}
                         >
 
                             <div className="feature-icon">
@@ -211,13 +371,67 @@ function App() {
                             </div>
 
                             <div>
-                                <strong>पिकाचा फोटो</strong>
-                                <p>रोग किंवा समस्या तपासा</p>
+                                <strong>
+                                    पिकाचा फोटो
+                                </strong>
+
+                                <p>
+                                    {imageLoading
+                                        ? "फोटो तपासत आहे..."
+                                        : "फोटो काढा / निवडा"}
+                                </p>
                             </div>
 
                         </button>
 
                     </div>
+
+
+                    {/* Hidden image input */}
+
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handleImageUpload}
+                        style={{
+                            display: "none"
+                        }}
+                    />
+
+
+                    {/* Image preview */}
+
+                    {selectedImage && (
+                        <div
+                            style={{
+                                marginTop: "20px",
+                                textAlign: "center"
+                            }}
+                        >
+
+                            <img
+                                src={URL.createObjectURL(
+                                    selectedImage
+                                )}
+                                alt="Banana plant"
+                                style={{
+                                    width: "180px",
+                                    height: "180px",
+                                    objectFit: "cover",
+                                    borderRadius: "16px",
+                                    border:
+                                        "3px solid #2e7d32"
+                                }}
+                            />
+
+                            <p>
+                                📷 फोटो तपासण्यासाठी पाठवला आहे
+                            </p>
+
+                        </div>
+                    )}
 
                 </section>
 
@@ -227,9 +441,17 @@ function App() {
                 <section className="quick-section">
 
                     <div className="section-title">
-                        <h3>लोकप्रिय प्रश्न</h3>
-                        <span>जलद प्रश्न</span>
+
+                        <h3>
+                            पटकन प्रश्न विचारा
+                        </h3>
+
+                        <span>
+                            👇 निवडा
+                        </span>
+
                     </div>
+
 
                     <div className="quick-grid">
 
@@ -241,11 +463,18 @@ function App() {
                             }
                         >
                             <span>🌱</span>
+
                             <div>
-                                <strong>खत</strong>
-                                <small>योग्य खत कोणते?</small>
+                                <strong>
+                                    खत
+                                </strong>
+
+                                <small>
+                                    कोणते खत?
+                                </small>
                             </div>
                         </button>
+
 
                         <button
                             onClick={() =>
@@ -255,11 +484,18 @@ function App() {
                             }
                         >
                             <span>💧</span>
+
                             <div>
-                                <strong>पाणी</strong>
-                                <small>किती पाणी द्यावे?</small>
+                                <strong>
+                                    पाणी
+                                </strong>
+
+                                <small>
+                                    किती पाणी?
+                                </small>
                             </div>
                         </button>
+
 
                         <button
                             onClick={() =>
@@ -269,11 +505,18 @@ function App() {
                             }
                         >
                             <span>🍃</span>
+
                             <div>
-                                <strong>पानांचा रोग</strong>
-                                <small>पाने पिवळी का होतात?</small>
+                                <strong>
+                                    पाने
+                                </strong>
+
+                                <small>
+                                    पाने पिवळी?
+                                </small>
                             </div>
                         </button>
+
 
                         <button
                             onClick={() =>
@@ -283,9 +526,15 @@ function App() {
                             }
                         >
                             <span>🐛</span>
+
                             <div>
-                                <strong>कीड</strong>
-                                <small>काय उपाय करावा?</small>
+                                <strong>
+                                    कीड
+                                </strong>
+
+                                <small>
+                                    काय करावे?
+                                </small>
                             </div>
                         </button>
 
@@ -301,8 +550,15 @@ function App() {
                     <div className="chat-heading">
 
                         <div>
-                            <h3>ShetiMitra सोबत बोला</h3>
-                            <p>तुमचे प्रश्न येथे दिसतील</p>
+
+                            <h3>
+                                कृषीवाणी
+                            </h3>
+
+                            <p>
+                                तुमचे प्रश्न आणि उत्तरे
+                            </p>
+
                         </div>
 
                         <div className="chat-leaf">
@@ -314,47 +570,56 @@ function App() {
 
                     <div className="messages">
 
-                        {messages.map((message, index) => (
-
-                            <div
-                                key={index}
-                                className={`message-row ${
-                                    message.sender === "user"
-                                        ? "user-row"
-                                        : "bot-row"
-                                }`}
-                            >
-
-                                {message.sender === "bot" && (
-                                    <div className="avatar">
-                                        🌱
-                                    </div>
-                                )}
+                        {messages.map(
+                            (message, index) => (
 
                                 <div
-                                    className={`message ${
-                                        message.sender === "user"
-                                            ? "user-message"
-                                            : "bot-message"
+                                    key={index}
+                                    className={`message-row ${
+                                        message.sender ===
+                                        "user"
+                                            ? "user-row"
+                                            : "bot-row"
                                     }`}
                                 >
 
-                                    {message.sender === "bot" && (
-                                        <strong>
-                                            ShetiMitra
-                                        </strong>
+                                    {message.sender ===
+                                        "bot" && (
+                                        <div className="avatar">
+                                            🌱
+                                        </div>
                                     )}
 
-                                    <p>{message.text}</p>
+
+                                    <div
+                                        className={`message ${
+                                            message.sender ===
+                                            "user"
+                                                ? "user-message"
+                                                : "bot-message"
+                                        }`}
+                                    >
+
+                                        {message.sender ===
+                                            "bot" && (
+                                            <strong>
+                                                कृषीवाणी
+                                            </strong>
+                                        )}
+
+                                        <p>
+                                            {message.text}
+                                        </p>
+
+                                    </div>
 
                                 </div>
-
-                            </div>
-
-                        ))}
+                            )
+                        )}
 
 
-                        {loading && (
+                        {(loading ||
+                            imageLoading) && (
 
                             <div className="message-row bot-row">
 
@@ -363,13 +628,14 @@ function App() {
                                 </div>
 
                                 <div className="message bot-message loading">
+
                                     <span></span>
                                     <span></span>
                                     <span></span>
+
                                 </div>
 
                             </div>
-
                         )}
 
                     </div>
@@ -384,49 +650,109 @@ function App() {
             <footer className="bottom-area">
 
                 {listening && (
+
                     <div className="listening">
-                        🔴 ऐकत आहे... मराठीत बोला
+                        🔴 ऐकत आहे...
+                        <br />
+                        मराठीत बोला
                     </div>
+
                 )}
+
 
                 <div className="input-wrapper">
 
+                    {/* Voice */}
+
                     <button
                         className={`mic-button ${
-                            listening ? "active" : ""
+                            listening
+                                ? "active"
+                                : ""
                         }`}
                         onClick={startListening}
-                        disabled={loading || listening}
+                        disabled={
+                            loading ||
+                            listening
+                        }
                     >
                         🎤
                     </button>
+
+
+                    {/* Text */}
 
                     <input
                         type="text"
                         value={question}
                         onChange={(e) =>
-                            setQuestion(e.target.value)
+                            setQuestion(
+                                e.target.value
+                            )
                         }
                         onKeyDown={(e) => {
+
                             if (e.key === "Enter") {
                                 sendQuestion();
                             }
+
                         }}
-                        placeholder="तुमचा प्रश्न येथे लिहा..."
+                        placeholder="इथे प्रश्न लिहा..."
                     />
+
+
+                    {/* Send */}
 
                     <button
                         className="send-button"
-                        onClick={() => sendQuestion()}
-                        disabled={loading || !question.trim()}
+                        onClick={() =>
+                            sendQuestion()
+                        }
+                        disabled={
+                            loading ||
+                            !question.trim()
+                        }
                     >
                         ➤
                     </button>
 
                 </div>
 
+
+                {/* Big Photo Button */}
+
+                <button
+                    onClick={openImagePicker}
+                    disabled={imageLoading}
+                    style={{
+                        width: "100%",
+                        marginTop: "12px",
+                        padding: "16px",
+                        border: "none",
+                        borderRadius: "16px",
+                        background:
+                            "#2e7d32",
+                        color: "white",
+                        fontSize: "18px",
+                        fontWeight: "bold",
+                        cursor: "pointer"
+                    }}
+                >
+
+                    📷
+                    {" "}
+                    {imageLoading
+                        ? "फोटो तपासत आहे..."
+                        : "पिकाचा फोटो काढा / निवडा"}
+
+                </button>
+
+
                 <p className="footer-text">
-                    🌱 ShetiMitra • केळी शेतीसाठी तुमचा डिजिटल साथीदार
+
+                    🌱 कृषीवाणी •
+                    केळी शेतीसाठी तुमचा डिजिटल साथीदार
+
                 </p>
 
             </footer>
