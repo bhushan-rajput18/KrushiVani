@@ -23,6 +23,10 @@ function App() {
     const ttsAudioRef = useRef(null);
     const ttsRequestRef = useRef(0);
 
+
+    const API_URL =
+    import.meta.env.VITE_API_URL || "http://localhost:5000";
+
     const [messages, setMessages] = useState([
         {
             sender: "bot",
@@ -70,7 +74,7 @@ function App() {
 
         try {
             const response = await fetch(
-                "http://localhost:5000/api/text-to-speech",
+                `${API_URL}/api/text-to-speech`,
                 {
                     method: "POST",
                     headers: {
@@ -263,7 +267,7 @@ const transcribeAudio = async (audioFile) => {
         );
 
         const response = await fetch(
-            "http://localhost:5000/api/speech-to-text",
+            `${API_URL}/api/speech-to-text`,
             {
                 method: "POST",
                 body: formData
@@ -329,7 +333,7 @@ const transcribeAudio = async (audioFile) => {
 
         try {
             const response = await fetch(
-                "http://localhost:5000/api/chat",
+                `${API_URL}/api/chat`,
                 {
                     method: "POST",
                     headers: {
@@ -402,7 +406,7 @@ const transcribeAudio = async (audioFile) => {
 
         try {
             const response = await fetch(
-                "http://localhost:5000/api/image",
+                `${API_URL}/api/image`,
                 {
                     method: "POST",
                     body: formData
