@@ -10,11 +10,11 @@ function App() {
     const [previewUrl, setPreviewUrl] = useState("");
 
     const [cameraOpen, setCameraOpen] = useState(false);
+    const [speaking, setSpeaking] = useState(false);
 
     const cameraVideoRef = useRef(null);
     const cameraStreamRef = useRef(null);
 
-    const cameraInputRef = useRef(null);
     const galleryInputRef = useRef(null);
     const chatRef = useRef(null);
 
@@ -26,7 +26,7 @@ function App() {
     ]);
 
     // =========================
-    // Preview cleanup
+    // Preview
     // =========================
 
     useEffect(() => {
@@ -42,7 +42,7 @@ function App() {
     }, [selectedImage]);
 
     // =========================
-    // Auto scroll chat
+    // Auto Scroll
     // =========================
 
     useEffect(() => {
@@ -51,6 +51,75 @@ function App() {
                 chatRef.current.scrollHeight;
         }
     }, [messages, loading, imageLoading]);
+
+    // =========================
+    // 🔊 Marathi Voice Output
+    // =========================
+
+    const speakMarathi = (text) => {
+        if (!("speechSynthesis" in window)) {
+            alert(
+                "तुमच्या ब्राउझरमध्ये आवाजाची सुविधा उपलब्ध नाही."
+            );
+            return;
+        }
+
+        window.speechSynthesis.cancel();
+
+        const cleanText = text
+            .replace(
+                /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu,
+                ""
+            )
+            .replace(/\n+/g, ". ")
+            .trim();
+
+        if (!cleanText) return;
+
+        const speech =
+            new SpeechSynthesisUtterance(cleanText);
+
+        speech.lang = "mr-IN";
+        speech.rate = 0.9;
+        speech.pitch = 1;
+        speech.volume = 1;
+
+        const voices =
+            window.speechSynthesis.getVoices();
+
+        const marathiVoice = voices.find(
+            (voice) =>
+                voice.lang.toLowerCase() === "mr-in" ||
+                voice.lang.toLowerCase().startsWith("mr")
+        );
+
+        if (marathiVoice) {
+            speech.voice = marathiVoice;
+        }
+
+        speech.onstart = () => {
+            setSpeaking(true);
+        };
+
+        speech.onend = () => {
+            setSpeaking(false);
+        };
+
+        speech.onerror = () => {
+            setSpeaking(false);
+        };
+
+        window.speechSynthesis.speak(speech);
+    };
+
+    // =========================
+    // Stop Voice
+    // =========================
+
+    const stopSpeaking = () => {
+        window.speechSynthesis.cancel();
+        setSpeaking(false);
+    };
 
     // =========================
     // Voice Input
@@ -137,26 +206,37 @@ function App() {
 
             const data = await response.json();
 
-            setMessages((previousMessages) => [
-                ...previousMessages,
-                {
-                    sender: "bot",
-                    text:
-                        data.answer ||
-                        "उत्तर मिळाले नाही."
-                }
-            ]);
-        } catch (error) {
-            console.error(error);
+            const answer =
+                data.answer ||
+                "उत्तर मिळाले नाही.";
 
             setMessages((previousMessages) => [
                 ...previousMessages,
                 {
                     sender: "bot",
-                    text:
-                        "❌ सर्व्हरशी कनेक्ट होता आले नाही. कृपया पुन्हा प्रयत्न करा."
+                    text: answer
                 }
             ]);
+
+            // 🔊 Speak chatbot answer in Marathi
+            speakMarathi(answer);
+
+        } catch (error) {
+            console.error(error);
+
+            const errorMessage =
+                "सर्व्हरशी कनेक्ट होता आले नाही. कृपया पुन्हा प्रयत्न करा.";
+
+            setMessages((previousMessages) => [
+                ...previousMessages,
+                {
+                    sender: "bot",
+                    text: "❌ " + errorMessage
+                }
+            ]);
+
+            speakMarathi(errorMessage);
+
         } finally {
             setLoading(false);
         }
@@ -206,33 +286,34 @@ function App() {
 
                 if (diseaseName === "healthy") {
                     diseaseName =
-                        "केळीचे झाड निरोगी दिसत आहे 🌱";
+                        "केळीचे झाड निरोगी दिसत आहे.";
                 } else if (
                     diseaseName === "fusarium_wilt"
                 ) {
                     diseaseName =
-                        "फ्युजेरियम विल्ट (पनामा रोग)";
+                        "फ्युजेरियम विल्ट म्हणजे पनामा रोग.";
                 } else if (
                     diseaseName === "yellow_sigatoka"
                 ) {
-                    diseaseName = "यलो सिगाटोका";
+                    diseaseName =
+                        "यलो सिगाटोका रोगाची लक्षणे दिसत आहेत.";
                 }
 
                 const confidence =
                     Number(data.confidence || 0);
 
                 message =
-                    "🔍 फोटो तपासला आहे.\n\n" +
-                    "📌 ओळख: " +
+                    "फोटो तपासला आहे.\n\n" +
+                    "ओळख: " +
                     diseaseName +
                     "\n\n" +
-                    "📊 विश्वास: " +
+                    "विश्वास: " +
                     confidence.toFixed(2) +
                     "%";
 
                 if (confidence < 70) {
                     message +=
-                        "\n\n⚠️ फोटोवरून खात्रीने सांगता येत नाही. अधिक स्पष्ट फोटो द्या.";
+                        "\n\nफोटोवरून खात्रीने सांगता येत नाही. अधिक स्पष्ट फोटो द्या.";
                 }
             }
 
@@ -243,17 +324,26 @@ function App() {
                     text: message
                 }
             ]);
+
+            // 🔊 Speak image-analysis result in Marathi
+            speakMarathi(message);
+
         } catch (error) {
             console.error(error);
+
+            const errorMessage =
+                "फोटो तपासता आला नाही. कृपया पुन्हा फोटो पाठवा.";
 
             setMessages((previousMessages) => [
                 ...previousMessages,
                 {
                     sender: "bot",
-                    text:
-                        "❌ फोटो तपासता आला नाही.\nकृपया पुन्हा फोटो पाठवा."
+                    text: "❌ " + errorMessage
                 }
             ]);
+
+            speakMarathi(errorMessage);
+
         } finally {
             setImageLoading(false);
         }
@@ -278,7 +368,7 @@ function App() {
     };
 
     // =========================
-    // Laptop / Mobile Camera
+    // Camera
     // =========================
 
     const openCamera = async () => {
@@ -312,6 +402,7 @@ function App() {
                         stream;
                 }
             }, 100);
+
         } catch (error) {
             console.error(error);
 
@@ -338,7 +429,8 @@ function App() {
 
         if (!video) return;
 
-        const canvas = document.createElement("canvas");
+        const canvas =
+            document.createElement("canvas");
 
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
@@ -437,8 +529,6 @@ function App() {
                         );
                 }
 
-                /* ================= HEADER ================= */
-
                 .topbar {
                     width: 100%;
                     background: linear-gradient(
@@ -446,7 +536,6 @@ function App() {
                         #176b38,
                         #23884a
                     );
-                    color: white;
                     min-height: 76px;
                     display: flex;
                     align-items: center;
@@ -454,6 +543,7 @@ function App() {
                     padding: 12px clamp(18px, 5vw, 70px);
                     box-shadow:
                         0 5px 20px rgba(24, 91, 48, 0.18);
+                    color: white;
                 }
 
                 .brand {
@@ -473,7 +563,6 @@ function App() {
                     justify-content: center;
                     font-size: 28px;
                     background: rgba(255,255,255,0.16);
-                    border: 1px solid rgba(255,255,255,0.2);
                 }
 
                 .brand h1 {
@@ -511,15 +600,11 @@ function App() {
                     box-shadow: 0 0 10px #8df5a6;
                 }
 
-                /* ================= MAIN ================= */
-
                 .main {
                     width: min(1120px, calc(100% - 32px));
                     margin: 0 auto;
                     padding: 32px 0 35px;
                 }
-
-                /* ================= HERO ================= */
 
                 .hero {
                     position: relative;
@@ -531,7 +616,6 @@ function App() {
                     align-items: center;
                     justify-content: space-between;
                     gap: 30px;
-
                     background:
                         radial-gradient(
                             circle at 90% 15%,
@@ -540,24 +624,12 @@ function App() {
                         ),
                         linear-gradient(
                             135deg,
-                            #176b38 0%,
+                            #176b38,
                             #238b4b 52%,
-                            #2e9c57 100%
+                            #2e9c57
                         );
-
                     box-shadow:
                         0 18px 45px rgba(31, 112, 57, 0.20);
-                }
-
-                .hero::before {
-                    content: "";
-                    position: absolute;
-                    width: 260px;
-                    height: 260px;
-                    border-radius: 50%;
-                    right: -100px;
-                    top: -110px;
-                    background: rgba(255,255,255,0.08);
                 }
 
                 .hero-content {
@@ -568,11 +640,9 @@ function App() {
 
                 .welcome-tag {
                     display: inline-flex;
-                    align-items: center;
                     padding: 7px 13px;
                     border-radius: 30px;
                     background: rgba(255,255,255,0.14);
-                    border: 1px solid rgba(255,255,255,0.18);
                     color: white;
                     font-size: 14px;
                     margin-bottom: 15px;
@@ -584,7 +654,6 @@ function App() {
                     font-size: clamp(28px, 4vw, 47px);
                     line-height: 1.2;
                     font-weight: 800;
-                    letter-spacing: -0.5px;
                 }
 
                 .hero p {
@@ -606,12 +675,7 @@ function App() {
                     justify-content: center;
                     font-size: 80px;
                     background: rgba(255,255,255,0.12);
-                    border: 1px solid rgba(255,255,255,0.20);
-                    box-shadow:
-                        inset 0 0 30px rgba(255,255,255,0.08);
                 }
-
-                /* ================= SECTION ================= */
 
                 .section {
                     margin-top: 35px;
@@ -637,8 +701,6 @@ function App() {
                     font-size: 13px;
                 }
 
-                /* ================= ACTION CARDS ================= */
-
                 .feature-grid {
                     display: grid;
                     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -655,9 +717,7 @@ function App() {
                     display: flex;
                     align-items: center;
                     gap: 20px;
-                    transition:
-                        transform 0.2s ease,
-                        box-shadow 0.2s ease;
+                    transition: 0.2s ease;
                 }
 
                 .feature-card:hover {
@@ -677,8 +737,6 @@ function App() {
                         #f1fbf2
                     );
                     border: 1px solid #c9e9d0;
-                    box-shadow:
-                        0 10px 28px rgba(51, 128, 72, 0.08);
                 }
 
                 .photo-card {
@@ -688,8 +746,6 @@ function App() {
                         #fffaf0
                     );
                     border: 1px solid #f1dfb8;
-                    box-shadow:
-                        0 10px 28px rgba(172, 124, 36, 0.08);
                 }
 
                 .feature-icon {
@@ -719,8 +775,6 @@ function App() {
                     font-size: 14px;
                     line-height: 1.5;
                 }
-
-                /* ================= IMAGE PREVIEW ================= */
 
                 .preview-card {
                     margin-top: 20px;
@@ -752,8 +806,6 @@ function App() {
                     font-size: 13px;
                 }
 
-                /* ================= QUICK QUESTIONS ================= */
-
                 .quick-grid {
                     display: grid;
                     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -771,14 +823,11 @@ function App() {
                     gap: 12px;
                     text-align: left;
                     transition: 0.2s ease;
-                    min-width: 0;
                 }
 
                 .quick-card:hover {
                     transform: translateY(-2px);
                     border-color: #9bcbaa;
-                    box-shadow:
-                        0 8px 20px rgba(45, 105, 61, 0.09);
                 }
 
                 .quick-icon {
@@ -805,8 +854,6 @@ function App() {
                     color: #819187;
                     font-size: 11px;
                 }
-
-                /* ================= CHAT ================= */
 
                 .chat-box {
                     margin-top: 35px;
@@ -865,12 +912,7 @@ function App() {
                     height: 390px;
                     overflow-y: auto;
                     padding: 23px;
-                    background:
-                        linear-gradient(
-                            180deg,
-                            #fcfefc,
-                            #f8fcf8
-                        );
+                    background: #f8fcf8;
                 }
 
                 .message-row {
@@ -929,10 +971,6 @@ function App() {
                     color: #2f8147;
                 }
 
-                .user-message strong {
-                    color: white;
-                }
-
                 .message p {
                     margin: 0;
                 }
@@ -970,8 +1008,6 @@ function App() {
                     }
                 }
 
-                /* ================= BOTTOM INPUT ================= */
-
                 .bottom-area {
                     width: min(1120px, calc(100% - 32px));
                     margin: 0 auto;
@@ -987,6 +1023,16 @@ function App() {
                     text-align: center;
                     font-size: 13px;
                     border: 1px solid #ffd6d6;
+                }
+
+                .speaking {
+                    margin-bottom: 10px;
+                    padding: 10px 14px;
+                    border-radius: 13px;
+                    background: #e8f7eb;
+                    color: #27703c;
+                    text-align: center;
+                    font-size: 13px;
                 }
 
                 .input-wrapper {
@@ -1101,7 +1147,7 @@ function App() {
                     font-size: 12px;
                 }
 
-                /* ================= CAMERA MODAL ================= */
+                /* Camera */
 
                 .camera-overlay {
                     position: fixed;
@@ -1169,8 +1215,6 @@ function App() {
                     font-weight: 800;
                     cursor: pointer;
                 }
-
-                /* ================= RESPONSIVE ================= */
 
                 @media (max-width: 850px) {
 
@@ -1389,6 +1433,7 @@ function App() {
                 <section className="section">
 
                     <div className="section-heading">
+
                         <h3>
                             तुम्हाला काय करायचे आहे?
                         </h3>
@@ -1396,6 +1441,7 @@ function App() {
                         <span>
                             दोन सोपे पर्याय
                         </span>
+
                     </div>
 
 
@@ -1415,6 +1461,7 @@ function App() {
                             </div>
 
                             <div>
+
                                 <strong>
                                     बोलून विचारा
                                 </strong>
@@ -1422,6 +1469,7 @@ function App() {
                                 <p>
                                     मराठीत बोला आणि तुमचा प्रश्न विचारा
                                 </p>
+
                             </div>
 
                         </button>
@@ -1438,6 +1486,7 @@ function App() {
                             </div>
 
                             <div>
+
                                 <strong>
                                     पिकाचा फोटो तपासा
                                 </strong>
@@ -1445,6 +1494,7 @@ function App() {
                                 <p>
                                     कॅमेरा वापरून झाडाचा फोटो काढा
                                 </p>
+
                             </div>
 
                         </button>
@@ -1453,6 +1503,7 @@ function App() {
 
 
                     {selectedImage && previewUrl && (
+
                         <div className="preview-card">
 
                             <img
@@ -1475,6 +1526,7 @@ function App() {
                             </div>
 
                         </div>
+
                     )}
 
                 </section>
@@ -1513,9 +1565,7 @@ function App() {
                             </div>
 
                             <div>
-                                <strong>
-                                    खत
-                                </strong>
+                                <strong>खत</strong>
 
                                 <small>
                                     कोणते खत?
@@ -1539,9 +1589,7 @@ function App() {
                             </div>
 
                             <div>
-                                <strong>
-                                    पाणी
-                                </strong>
+                                <strong>पाणी</strong>
 
                                 <small>
                                     किती पाणी?
@@ -1565,9 +1613,7 @@ function App() {
                             </div>
 
                             <div>
-                                <strong>
-                                    पाने
-                                </strong>
+                                <strong>पाने</strong>
 
                                 <small>
                                     पाने पिवळी?
@@ -1591,9 +1637,7 @@ function App() {
                             </div>
 
                             <div>
-                                <strong>
-                                    कीड
-                                </strong>
+                                <strong>कीड</strong>
 
                                 <small>
                                     काय करावे?
@@ -1663,9 +1707,11 @@ function App() {
 
                                     {message.sender ===
                                         "bot" && (
+
                                         <div className="avatar">
                                             🌱
                                         </div>
+
                                     )}
 
 
@@ -1683,9 +1729,11 @@ function App() {
 
                                         {message.sender ===
                                             "bot" && (
+
                                             <strong>
                                                 कृषीवाणी
                                             </strong>
+
                                         )}
 
                                         <p>
@@ -1728,16 +1776,46 @@ function App() {
             </main>
 
 
-            {/* ================= BOTTOM INPUT ================= */}
+            {/* ================= BOTTOM ================= */}
 
             <footer className="bottom-area">
 
                 {listening && (
+
                     <div className="listening">
+
                         🔴 ऐकत आहे...
                         <br />
                         मराठीत बोला
+
                     </div>
+
+                )}
+
+
+                {speaking && (
+
+                    <div className="speaking">
+
+                        🔊 कृषीवाणी उत्तर सांगत आहे...
+
+                        <button
+                            onClick={stopSpeaking}
+                            style={{
+                                marginLeft: "10px",
+                                border: "none",
+                                borderRadius: "8px",
+                                padding: "5px 9px",
+                                cursor: "pointer",
+                                background: "#ffffff",
+                                color: "#27703c"
+                            }}
+                        >
+                            थांबवा
+                        </button>
+
+                    </div>
+
                 )}
 
 
@@ -1757,7 +1835,6 @@ function App() {
                             loading ||
                             listening
                         }
-                        title="बोलून विचारा"
                     >
                         🎤
                     </button>
@@ -1773,9 +1850,11 @@ function App() {
                             )
                         }
                         onKeyDown={(e) => {
+
                             if (e.key === "Enter") {
                                 sendQuestion();
                             }
+
                         }}
                         placeholder="इथे तुमचा प्रश्न लिहा..."
                     />
@@ -1790,7 +1869,6 @@ function App() {
                             loading ||
                             !question.trim()
                         }
-                        title="प्रश्न पाठवा"
                     >
                         ➤
                     </button>
@@ -1798,7 +1876,7 @@ function App() {
                 </div>
 
 
-                {/* PHOTO OPTIONS */}
+                {/* PHOTO BUTTONS */}
 
                 <div className="photo-actions">
 
@@ -1834,13 +1912,14 @@ function App() {
 
 
                 <p className="footer-text">
-                    🌱 कृषीवाणी • केळी शेतीसाठी तुमचा डिजिटल साथीदार
+                    🌱 कृषीवाणी •
+                    केळी शेतीसाठी तुमचा डिजिटल साथीदार
                 </p>
 
             </footer>
 
 
-            {/* ================= CAMERA ================= */}
+            {/* ================= CAMERA MODAL ================= */}
 
             {cameraOpen && (
 
