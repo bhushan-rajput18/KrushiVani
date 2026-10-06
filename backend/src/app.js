@@ -1,3 +1,5 @@
+import textToSpeechRoutes from "./routes/textToSpeechRoutes.js";
+import speechToTextRoutes from "./routes/speechToTextRoutes.js";
 import imageRoutes from "./routes/imageRoutes.js";
 import faqRoutes from "./routes/faqRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
@@ -16,6 +18,8 @@ app.use(express.json());
 app.use("/api/faqs", faqRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/image", imageRoutes);
+app.use("/api/speech-to-text", speechToTextRoutes);
+app.use("/api/text-to-speech", textToSpeechRoutes);
 
 app.get("/", (req, res) => {
     res.json({

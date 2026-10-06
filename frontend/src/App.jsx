@@ -4,6 +4,7 @@ function App() {
     const [question, setQuestion] = useState("");
     const [loading, setLoading] = useState(false);
     const [listening, setListening] = useState(false);
+    const [transcribing, setTranscribing] = useState(false);
 
     const [imageLoading, setImageLoading] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
@@ -17,6 +18,10 @@ function App() {
 
     const galleryInputRef = useRef(null);
     const chatRef = useRef(null);
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
+    const ttsAudioRef = useRef(null);
+    const ttsRequestRef = useRef(0);
 
     const [messages, setMessages] = useState([
         {
@@ -56,60 +61,63 @@ function App() {
     // 🔊 Marathi Voice Output
     // =========================
 
-    const speakMarathi = (text) => {
-        if (!("speechSynthesis" in window)) {
-            alert(
-                "तुमच्या ब्राउझरमध्ये आवाजाची सुविधा उपलब्ध नाही."
+    const speakMarathi = async (text) => {
+        if (!text?.trim()) return;
+
+        stopSpeaking();
+        const requestId = ++ttsRequestRef.current;
+        setSpeaking(true);
+
+        try {
+            const response = await fetch(
+                "http://localhost:5000/api/text-to-speech",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ text })
+                }
             );
-            return;
-        }
 
-        window.speechSynthesis.cancel();
+            const data = await response.json();
 
-        const cleanText = text
-            .replace(
-                /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu,
-                ""
-            )
-            .replace(/\n+/g, ". ")
-            .trim();
+            if (!response.ok || !data?.audio) {
+                throw new Error(
+                    data?.message || "Text-to-speech failed"
+                );
+            }
 
-        if (!cleanText) return;
+            if (requestId !== ttsRequestRef.current) return;
 
-        const speech =
-            new SpeechSynthesisUtterance(cleanText);
+            const audioSource = data.audio.startsWith("data:")
+                ? data.audio
+                : `data:audio/wav;base64,${data.audio}`;
 
-        speech.lang = "mr-IN";
-        speech.rate = 0.9;
-        speech.pitch = 1;
-        speech.volume = 1;
+            const audio = new Audio(audioSource);
+            ttsAudioRef.current = audio;
 
-        const voices =
-            window.speechSynthesis.getVoices();
+            audio.onended = () => {
+                if (ttsAudioRef.current === audio) {
+                    ttsAudioRef.current = null;
+                    setSpeaking(false);
+                }
+            };
 
-        const marathiVoice = voices.find(
-            (voice) =>
-                voice.lang.toLowerCase() === "mr-in" ||
-                voice.lang.toLowerCase().startsWith("mr")
-        );
+            audio.onerror = () => {
+                console.error("Audio playback error");
 
-        if (marathiVoice) {
-            speech.voice = marathiVoice;
-        }
+                if (ttsAudioRef.current === audio) {
+                    ttsAudioRef.current = null;
+                    setSpeaking(false);
+                }
+            };
 
-        speech.onstart = () => {
-            setSpeaking(true);
-        };
-
-        speech.onend = () => {
+            await audio.play();
+        } catch (error) {
+            console.error("Text-to-speech error:", error);
             setSpeaking(false);
-        };
-
-        speech.onerror = () => {
-            setSpeaking(false);
-        };
-
-        window.speechSynthesis.speak(speech);
+        }
     };
 
     // =========================
@@ -117,7 +125,14 @@ function App() {
     // =========================
 
     const stopSpeaking = () => {
-        window.speechSynthesis.cancel();
+        ttsRequestRef.current += 1;
+
+        if (ttsAudioRef.current) {
+            ttsAudioRef.current.pause();
+            ttsAudioRef.current.currentTime = 0;
+            ttsAudioRef.current = null;
+        }
+
         setSpeaking(false);
     };
 
@@ -125,50 +140,172 @@ function App() {
     // Voice Input
     // =========================
 
-    const startListening = () => {
-        const SpeechRecognition =
-            window.SpeechRecognition ||
-            window.webkitSpeechRecognition;
+    const startListening = async () => {
+    if (transcribing) return;
 
-        if (!SpeechRecognition) {
+    if (
+        !navigator.mediaDevices ||
+        !navigator.mediaDevices.getUserMedia
+    ) {
+        alert(
+            "तुमच्या ब्राउझरमध्ये मायक्रोफोनची सुविधा उपलब्ध नाही."
+        );
+        return;
+    }
+
+    try {
+        const stream =
+            await navigator.mediaDevices.getUserMedia({
+                audio: true
+            });
+
+        const mimeType =
+            MediaRecorder.isTypeSupported(
+                "audio/webm;codecs=opus"
+            )
+                ? "audio/webm;codecs=opus"
+                : "audio/webm";
+
+        const recorder =
+            new MediaRecorder(
+                stream,
+                { mimeType }
+            );
+
+        audioChunksRef.current = [];
+
+        recorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                audioChunksRef.current.push(event.data);
+            }
+        };
+
+        recorder.onstop = async () => {
+            stream
+                .getTracks()
+                .forEach((track) => track.stop());
+
+            const audioBlob = new Blob(
+                audioChunksRef.current,
+                { type: mimeType }
+            );
+
+            if (audioBlob.size === 0) {
+                setListening(false);
+                return;
+            }
+
+            const audioFile = new File(
+                [audioBlob],
+                "krushivani_voice.webm",
+                { type: mimeType }
+            );
+
+            await transcribeAudio(audioFile);
+        };
+
+        recorder.onerror = (event) => {
+            console.error(
+                "MediaRecorder error:",
+                event.error
+            );
+
+            stream
+                .getTracks()
+                .forEach((track) => track.stop());
+
+            setListening(false);
+        };
+
+        mediaRecorderRef.current = recorder;
+
+        recorder.start();
+
+        setListening(true);
+
+    } catch (error) {
+        console.error(
+            "Microphone error:",
+            error
+        );
+
+        setListening(false);
+
+        alert(
+            "मायक्रोफोन सुरू करता आला नाही. कृपया Microphone Permission द्या."
+        );
+    }
+};
+
+const stopListening = () => {
+    const recorder =
+        mediaRecorderRef.current;
+
+    if (
+        recorder &&
+        recorder.state !== "inactive"
+    ) {
+        recorder.stop();
+    }
+
+    setListening(false);
+};
+
+const transcribeAudio = async (audioFile) => {
+    setTranscribing(true);
+
+    try {
+        const formData = new FormData();
+
+        formData.append(
+            "audio",
+            audioFile
+        );
+
+        const response = await fetch(
+            "http://localhost:5000/api/speech-to-text",
+            {
+                method: "POST",
+                body: formData
+            }
+        );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                data?.message ||
+                "Speech-to-text failed"
+            );
+        }
+
+        const transcript =
+            data?.text?.trim();
+
+        if (!transcript) {
             alert(
-                "तुमच्या ब्राउझरमध्ये आवाजाची सुविधा उपलब्ध नाही."
+                "आवाजातून प्रश्न समजला नाही. कृपया पुन्हा स्पष्टपणे बोला."
             );
             return;
         }
 
-        const recognition = new SpeechRecognition();
+        setQuestion(transcript);
 
-        recognition.lang = "mr-IN";
-        recognition.interimResults = false;
-        recognition.continuous = false;
+    } catch (error) {
+        console.error(
+            "Speech-to-text error:",
+            error
+        );
 
-        recognition.onstart = () => {
-            setListening(true);
-        };
+        alert(
+            "आवाजाचे मजकुरात रूपांतर करता आले नाही. कृपया पुन्हा प्रयत्न करा."
+        );
 
-        recognition.onresult = (event) => {
-            const transcript =
-                event.results[0][0].transcript;
-
-            setQuestion(transcript);
-        };
-
-        recognition.onerror = (event) => {
-            console.error(
-                "Speech recognition error:",
-                event.error
-            );
-
-            setListening(false);
-        };
-
-        recognition.onend = () => {
-            setListening(false);
-        };
-
-        recognition.start();
-    };
+    } finally {
+        setTranscribing(false);
+    }
+};
 
     // =========================
     // Send Question
@@ -1449,10 +1586,14 @@ function App() {
 
                         <button
                             className="feature-card voice-card"
-                            onClick={startListening}
+                            onClick={
+                                listening
+                                    ? stopListening
+                                    : startListening
+                            }
                             disabled={
                                 loading ||
-                                listening
+                                transcribing
                             }
                         >
 
@@ -1830,10 +1971,14 @@ function App() {
                                     : ""
                             )
                         }
-                        onClick={startListening}
+                        onClick={
+                            listening
+                                ? stopListening
+                                : startListening
+                        }
                         disabled={
                             loading ||
-                            listening
+                            transcribing
                         }
                     >
                         🎤

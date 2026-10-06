@@ -21,40 +21,109 @@ router.post("/", async (req, res) => {
         let highestScore = 0;
 
         for (const faq of faqs) {
-
             let score = 0;
 
             // Check original question
-            if (faq.question.toLowerCase().includes(userQuestion)) {
+            if (
+                faq.question
+                    .toLowerCase()
+                    .includes(userQuestion)
+            ) {
                 score += 2;
             }
 
             // Check keywords
             for (const keyword of faq.keywords) {
-                if (userQuestion.includes(keyword.toLowerCase())) {
+                if (
+                    userQuestion.includes(
+                        keyword.toLowerCase()
+                    )
+                ) {
                     score++;
                 }
             }
 
-            // Keep the FAQ with the highest score
             if (score > highestScore) {
                 highestScore = score;
                 bestFAQ = faq;
             }
         }
 
-        if (bestFAQ) {
+        // =========================
+        // FAQ ANSWER
+        // =========================
+
+        if (bestFAQ && highestScore > 0) {
             return res.json({
                 answer: bestFAQ.answer
             });
         }
 
+        // =========================
+        // SARVAM AI ANSWER
+        // =========================
+
+        const response = await fetch(
+            "https://api.sarvam.ai/v1/chat/completions",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json",
+                    "api-subscription-key":
+                        process.env.SARVAM_API_KEY
+                },
+
+                body: JSON.stringify({
+                    model: "sarvam-m",
+                    messages: [
+                        {
+                            role: "system",
+                            content:
+                                "तुम्ही कृषीवाणी नावाचे मराठी कृषी सहाय्यक आहात. केळी शेतीशी संबंधित प्रश्नांची सोप्या आणि शेतकऱ्यांना समजेल अशा मराठीत उत्तरे द्या. उत्तर व्यावहारिक आणि स्पष्ट ठेवा. शक्य असल्यास समस्या, संभाव्य कारण आणि काय करावे हे सांगा. औषध किंवा खताचा अचूक डोस खात्रीशीर माहितीशिवाय सांगू नका."
+                        },
+                        {
+                            role: "user",
+                            content: question
+                        }
+                    ],
+                    temperature: 0.3,
+                    max_tokens: 500
+                })
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            console.error(
+                "Sarvam error:",
+                data
+            );
+
+            return res.status(500).json({
+                message: "Sarvam AI response failed"
+            });
+        }
+
+        const answer =
+            data?.choices?.[0]?.message?.content;
+
+        if (!answer) {
+            return res.status(500).json({
+                message: "No answer received from Sarvam"
+            });
+        }
+
         res.json({
-            answer: "माफ करा, या प्रश्नाचे उत्तर सध्या माझ्याकडे उपलब्ध नाही."
+            answer: answer
         });
 
     } catch (error) {
-        console.error(error);
+        console.error(
+            "Chatbot error:",
+            error
+        );
 
         res.status(500).json({
             message: "Chatbot error"
