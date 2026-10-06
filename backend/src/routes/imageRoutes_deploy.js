@@ -25,8 +25,8 @@ router.post("/", upload.single("image"), async (req, res) => {
             req.file.originalname
         );
 
-        const response = await fetch(
-            "http://localhost:5001/predict",
+       const response = await fetch(
+    `${process.env.ML_API_URL}/predict`,
             {
                 method: "POST",
                 body: formData
