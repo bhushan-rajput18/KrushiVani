@@ -25,6 +25,9 @@ router.post("/", upload.single("image"), async (req, res) => {
             req.file.originalname
         );
 
+
+console.log("ML request URL:", `${process.env.ML_API_URL}/predict`);
+
        const response = await fetch(
     `${process.env.ML_API_URL}/predict`,
             {
