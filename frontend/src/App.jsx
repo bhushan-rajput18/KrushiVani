@@ -168,11 +168,11 @@ function App() {
             const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"]
                 .find((type) => MediaRecorder.isTypeSupported(type)) || "";
             const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-            audioChunksRef.current = [];
-            audioRecorderRef.current = recorder;
+            const chunks = [];
+            audioChunksRef.current = chunks;
 
             recorder.ondataavailable = (event) => {
-                if (event.data?.size) audioChunksRef.current.push(event.data);
+            if (event.data?.size) chunks.push(event.data);
             };
             recorder.onerror = (event) => {
                 console.error("Audio recorder error:", event.error || event);
@@ -182,11 +182,16 @@ function App() {
                 alert("आवाज रेकॉर्ड करताना अडचण आली. पुन्हा प्रयत्न करा.");
             };
             recorder.onstop = async () => {
+                clearTimeout(recorder.stopTimer);
                 stream.getTracks().forEach((track) => track.stop());
                 setListening(false);
                 const actualType = recorder.mimeType || mimeType || "audio/webm";
                 const extension = actualType.includes("ogg") ? "ogg" : actualType.includes("mp4") ? "m4a" : "webm";
-                const audioBlob = new Blob(audioChunksRef.current, { type: actualType });
+                const audioBlob = new Blob(chunks, { type: actualType });
+                console.log("Recorded audio:", {
+                sizeBytes: audioBlob.size,
+                type: audioBlob.type,
+                });
                 audioRecorderRef.current = null;
                 if (!audioBlob.size) {
                     alert("आवाज रेकॉर्ड झाला नाही. पुन्हा प्रयत्न करा.");
@@ -209,8 +214,12 @@ function App() {
                     setLoading(false);
                 }
             };
-            recorder.start();
-            setListening(true);
+           recorder.start();
+        setListening(true);
+
+        recorder.stopTimer = setTimeout(() => {
+        if (recorder.state === "recording") recorder.stop();
+        }, 20000);
         } catch (error) {
             console.error("Microphone permission/error:", error);
             stream?.getTracks().forEach((track) => track.stop());
