@@ -347,7 +347,10 @@ function App() {
         try {
             const formData = new FormData();
             formData.append("image", file);
-            const response = await fetch(`${API_URL}/api/image`, { method: "POST", body: formData });
+            const response = await fetch(`${API_URL}/api/image-deploy`, {
+            method: "POST",
+            body: formData
+        });
             const data = await response.json();
             if (!response.ok) throw new Error(data.message || "Image analysis failed");
 
@@ -1042,25 +1045,15 @@ function App() {
 
 
 
-                        <input
-
-                            ref={fileInputRef}
-
-                            className="hidden-file-input"
-
-                            type="file"
-
-                            accept="image/*"
-
-                            capture="environment"
-
-                            onChange={handleImageUpload}
-
-                            tabIndex={-1}
-
-                            aria-hidden="true"
-
-                        />
+                       <input
+                        ref={fileInputRef}
+                        className="hidden-file-input"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        tabIndex={-1}
+                        aria-label="केळीच्या पिकाचा फोटो निवडा"
+                        />
 
                     </form>
 
