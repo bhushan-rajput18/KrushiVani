@@ -302,10 +302,6 @@ function App() {
 
 
 
-            // Browser voice output; requires a supported Marathi voice
-
-            speakMarathi(answer);
-
         } catch (error) {
 
             console.error(error);
@@ -372,7 +368,6 @@ function App() {
                 }
             }
             setMessages((previous) => [...previous, { sender: "bot", text: message }]);
-            speakMarathi(message);
         } catch (error) {
             console.error("Image analysis error:", error);
             setMessages((previous) => [...previous, { sender: "bot", text: "❌ फोटो तपासता आला नाही. कृपया बॅकएंड सुरू आहे का ते तपासा आणि पुन्हा फोटो पाठवा." }]);
