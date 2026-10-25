@@ -356,7 +356,7 @@ function App() {
         try {
             const formData = new FormData();
             formData.append("image", file);
-            const response = await fetch(`${API_URL}/api/image-deploy`, {
+            const response = await fetch(`${API_URL}/api/image`, {
             method: "POST",
             body: formData
         });
