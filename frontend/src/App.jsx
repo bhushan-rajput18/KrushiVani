@@ -2,46 +2,49 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import AppHeader from "./components/AppHeader";
+import CameraModal from "./components/CameraModal";
+import ChatPanel from "./components/ChatPanel";
+import IntroPanel from "./components/IntroPanel";
+
 import "./App.css";
-
-
 
 const API_URL = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
 
-
-
 function App() {
 
-    const [question, setQuestion] = useState("");
+    // UI state shared by the smaller presentational components.
+    const [question, setQuestion] = useState("");
+    const [messages, setMessages] = useState([
+        {
+            sender: "bot",
+            text: "🌱 नमस्कार! कृषीवाणी तुमच्या केळी शेतीसाठी मदत करण्यास तयार आहे."
+        }
+    ]);
+    const [loading, setLoading] = useState(false);
+    const [listening, setListening] = useState(false);
+    const [imageLoading, setImageLoading] = useState(false);
+    const [selectedImage, setSelectedImage] = useState(null);
+    const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
+    const [showIntro, setShowIntro] = useState(true);
+    const [speaking, setSpeaking] = useState(false);
+    const [cameraOpen, setCameraOpen] = useState(false);
 
-    const [loading, setLoading] = useState(false);
-
-    const [listening, setListening] = useState(false);
-
-    const [imageLoading, setImageLoading] = useState(false);
-
-    const [selectedImage, setSelectedImage] = useState(null);
-
-    const [showIntro, setShowIntro] = useState(true);
-
-    const [speaking, setSpeaking] = useState(false);
-
-
-
-    const fileInputRef = useRef(null);
-
-    const messagesEndRef = useRef(null);
+    // Refs hold browser-only objects that should not trigger a re-render.
+    const fileInputRef = useRef(null);
+    const messagesEndRef = useRef(null);
     const audioRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
     const audioPlayerRef = useRef(null);
     const audioUrlRef = useRef(null);
     const cameraVideoRef = useRef(null);
     const cameraStreamRef = useRef(null);
-    const [cameraOpen, setCameraOpen] = useState(false);
-    const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
 
+    // Create a temporary browser URL only while an image is selected.
     useEffect(() => {
         if (!selectedImage) {
+            // The preview is derived from the file selection, so clear it with the file.
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setImagePreviewUrl(null);
             return undefined;
         }
@@ -50,6 +53,7 @@ function App() {
         return () => URL.revokeObjectURL(url);
     }, [selectedImage]);
 
+    // Release microphone, camera, and audio resources when the app unmounts.
     useEffect(() => () => {
         audioPlayerRef.current?.pause();
         if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
@@ -57,37 +61,15 @@ function App() {
         if (audioRecorderRef.current?.state === "recording") audioRecorderRef.current.stop();
     }, []);
 
+    // Keep the newest reply visible as messages and loading indicators change.
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "end"
+        });
+    }, [messages, loading, imageLoading]);
 
-
-    const [messages, setMessages] = useState([
-
-        {
-
-            sender: "bot",
-
-            text: "🌱 नमस्कार! कृषीवाणी तुमच्या केळी शेतीसाठी मदत करण्यास तयार आहे."
-
-        }
-
-    ]);
-
-
-
-    useEffect(() => {
-
-        messagesEndRef.current?.scrollIntoView({
-
-            behavior: "smooth",
-
-            block: "end"
-
-        });
-
-    }, [messages, loading, imageLoading]);
-
-
-
-    // Sarvam Marathi text-to-speech
+    // Audio playback: request Marathi speech from the backend and play the returned WAV file.
     const speakMarathi = async (text) => {
         const cleanText = String(text || "")
             .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "")
@@ -151,7 +133,7 @@ function App() {
         setSpeaking(false);
     };
 
-    // Sarvam Marathi speech-to-text. Tap the mic again to finish recording.
+    // Voice input: tapping the microphone again stops recording and sends it for transcription.
     const startListening = async () => {
         if (listening) {
             stopListening();
@@ -168,11 +150,14 @@ function App() {
             const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"]
                 .find((type) => MediaRecorder.isTypeSupported(type)) || "";
             const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+
+            // Keep the active recorder so the next mic click can stop this recording.
+            audioRecorderRef.current = recorder;
             const chunks = [];
             audioChunksRef.current = chunks;
 
             recorder.ondataavailable = (event) => {
-            if (event.data?.size) chunks.push(event.data);
+                if (event.data?.size) chunks.push(event.data);
             };
             recorder.onerror = (event) => {
                 console.error("Audio recorder error:", event.error || event);
@@ -189,8 +174,8 @@ function App() {
                 const extension = actualType.includes("ogg") ? "ogg" : actualType.includes("mp4") ? "m4a" : "webm";
                 const audioBlob = new Blob(chunks, { type: actualType });
                 console.log("Recorded audio:", {
-                sizeBytes: audioBlob.size,
-                type: audioBlob.type,
+                    sizeBytes: audioBlob.size,
+                    type: audioBlob.type,
                 });
                 audioRecorderRef.current = null;
                 if (!audioBlob.size) {
@@ -214,12 +199,13 @@ function App() {
                     setLoading(false);
                 }
             };
-           recorder.start();
-        setListening(true);
+            recorder.start();
+            setListening(true);
 
-        recorder.stopTimer = setTimeout(() => {
-        if (recorder.state === "recording") recorder.stop();
-        }, 20000);
+            // Stop automatically after 20 seconds so a recording cannot be left open.
+            recorder.stopTimer = setTimeout(() => {
+                if (recorder.state === "recording") recorder.stop();
+            }, 20000);
         } catch (error) {
             console.error("Microphone permission/error:", error);
             stream?.getTracks().forEach((track) => track.stop());
@@ -233,115 +219,45 @@ function App() {
         if (recorder && recorder.state === "recording") recorder.stop();
     };
 
-    // Send a chatbot question
-
-    const sendQuestion = async (text = question) => {
-
-        if (!text.trim() || loading) return;
-
-
-
-        const userQuestion = text.trim();
-
-
-
-        setMessages((previous) => [
-
-            ...previous,
-
-            { sender: "user", text: userQuestion }
-
-        ]);
-
-
-
-        setQuestion("");
-
-        setLoading(true);
-
-
-
-        try {
-
-            const response = await fetch(`${API_URL}/api/chat`, {
-
-                method: "POST",
-
-                headers: {
-
-                    "Content-Type": "application/json"
-
-                },
-
-                body: JSON.stringify({
-
-                    question: userQuestion
-
-                })
-
-            });
-
-
-
-            if (!response.ok) {
-
-                throw new Error("Chat request failed");
-
-            }
-
-
-
-            const data = await response.json();
-
-            const answer =
-
-                data.answer ||
-
-                "माफ करा, सध्या उत्तर मिळाले नाही. कृपया पुन्हा प्रयत्न करा.";
-
-
-
-            setMessages((previous) => [
-
-                ...previous,
-
-                { sender: "bot", text: answer }
-
-            ]);
-
-
-
-        } catch (error) {
-
-            console.error(error);
-
-
-
-            setMessages((previous) => [
-
-                ...previous,
-
-                {
-
-                    sender: "bot",
-
-                    text: "सर्व्हरशी कनेक्ट होता आले नाही. कृपया बॅकएंड सुरू आहे का ते तपासा."
-
-                }
-
-            ]);
-
-        } finally {
-
-            setLoading(false);
-
-        }
-
-    };
-
-
-
-    // Open the device's image picker. On phones, capture="environment" also offers camera capture.
+    // Add the user's question immediately, then replace the loading state with an answer.
+    const sendQuestion = async (text = question) => {
+        if (!text.trim() || loading) return;
+
+        const userQuestion = text.trim();
+        setMessages((previous) => [
+            ...previous,
+            { sender: "user", text: userQuestion }
+        ]);
+        setQuestion("");
+        setLoading(true);
+
+        try {
+            const response = await fetch(`${API_URL}/api/chat`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ question: userQuestion })
+            });
+
+            if (!response.ok) throw new Error("Chat request failed");
+
+            const data = await response.json();
+            const answer = data.answer || "माफ करा, सध्या उत्तर मिळाले नाही. कृपया पुन्हा प्रयत्न करा.";
+            setMessages((previous) => [...previous, { sender: "bot", text: answer }]);
+        } catch (error) {
+            console.error(error);
+            setMessages((previous) => [
+                ...previous,
+                {
+                    sender: "bot",
+                    text: "सर्व्हरशी कनेक्ट होता आले नाही. कृपया बॅकएंड सुरू आहे का ते तपासा."
+                }
+            ]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Image analysis: choose, preview, and send a crop photo to the backend.
     const openImagePicker = () => fileInputRef.current?.click();
 
     const analyzeImage = async (file) => {
@@ -388,6 +304,7 @@ function App() {
         }
     };
 
+    // The same handler is used for the gallery button and a captured camera image.
     const handleImageUpload = (event) => {
         const file = event.target.files?.[0];
         if (file) {
@@ -397,6 +314,7 @@ function App() {
         event.target.value = "";
     };
 
+    // Prefer the rear camera on phones, but gracefully fall back to any camera.
     const openCamera = async () => {
         if (!navigator.mediaDevices?.getUserMedia) {
             alert("कॅमेरा उपलब्ध नाही. फोटो निवडण्यासाठी गॅलरी बटण वापरा.");
@@ -421,12 +339,14 @@ function App() {
         }
     };
 
+    // Always stop video tracks; otherwise a phone can keep showing camera-in-use.
     const closeCamera = () => {
         cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
         cameraStreamRef.current = null;
         setCameraOpen(false);
     };
 
+    // Draw the current video frame to a canvas, then reuse the normal image analysis flow.
     const capturePhoto = () => {
         const video = cameraVideoRef.current;
         if (!video || !video.videoWidth || !video.videoHeight) {
@@ -448,659 +368,63 @@ function App() {
         }, "image/jpeg", 0.9);
     };
 
-    const quickQuestion = (text) => {
-
-        setQuestion(text);
-
-    };
-
-
-
-    return (
-
-        <div className={`app ${showIntro ? "" : "intro-hidden"}`}>
-
-            <header className="topbar">
-
-                <div className="brand">
-
-                    <div className="brand-icon">🌱</div>
-
-                    <div>
-
-                        <h1>कृषीवाणी</h1>
-
-                        <span>शेतकऱ्यांचा डिजिटल मित्र</span>
-
-                    </div>
-
-                </div>
-
-
-
-                <div className="topbar-right">
-
-                    <div className="status">
-
-                        <span className="status-dot" />
-
-                        ऑनलाइन
-
-                    </div>
-
-
-
-                    {!showIntro && (
-
-                        <button
-
-                            className="show-intro-button"
-
-                            onClick={() => setShowIntro(true)}
-
-                            aria-label="परिचय दाखवा"
-
-                        >
-
-                            ☰ परिचय
-
-                        </button>
-
-                    )}
-
-                </div>
-
-            </header>
-
-
-
-            <main className="workspace">
-
-                {showIntro && (
-
-                    <aside className="intro-panel">
-
-                        <button
-
-                            className="close-intro-button"
-
-                            onClick={() => setShowIntro(false)}
-
-                            aria-label="परिचय बंद करा"
-
-                            title="परिचय बंद करा"
-
-                        >
-
-                            ×
-
-                        </button>
-
-
-
-                        <section className="hero">
-
-                            <span className="welcome-tag">
-
-                                🌾 तुमच्या शेतीसाठी
-
-                            </span>
-
-
-
-                            <h2>तुमच्या शेतीची मदत इथे मिळवा</h2>
-
-
-
-                            <p>
-
-                                🎤 मराठीत बोलून प्रश्न विचारा
-
-                                <br />
-
-                                📷 केळीच्या पिकाचा फोटो तपासा
-
-                            </p>
-
-
-
-                            <div className="hero-farmer" aria-hidden="true">
-
-                                👨‍🌾
-
-                            </div>
-
-                        </section>
-
-
-
-                        <section className="feature-section">
-
-                            <h3>तुम्हाला काय करायचे आहे?</h3>
-
-
-
-                            <div className="feature-grid">
-
-                                <button
-
-                                    className="feature-card voice-card"
-
-                                    onClick={listening ? stopListening : startListening}
-
-                                    disabled={loading}
-
-                                >
-
-                                    <span className="feature-icon">🎤</span>
-
-                                    <span className="feature-copy">
-
-                                        <strong>बोलून विचारा</strong>
-
-                                        <small>
-
-                                            {listening
-
-                                                ? "ऐकत आहे..."
-
-                                                : "मराठीत बोला आणि प्रश्न विचारा"}
-
-                                        </small>
-
-                                    </span>
-
-                                </button>
-
-
-
-                                <button
-
-                                    className="feature-card photo-card"
-
-                                    onClick={openCamera}
-
-                                    disabled={imageLoading}
-
-                                >
-
-                                    <span className="feature-icon">📷</span>
-
-                                    <span className="feature-copy">
-
-                                        <strong>पिकाचा फोटो तपासा</strong>
-
-                                        <small>
-
-                                            {imageLoading
-
-                                                ? "फोटो तपासत आहे..."
-
-                                                : "कॅमेरा किंवा गॅलरी वापरा"}
-
-                                        </small>
-
-                                    </span>
-
-                                </button>
-
-                            </div>
-
-                        </section>
-
-
-
-                        <section className="quick-section">
-
-                            <div className="section-title">
-
-                                <h3>पटकन प्रश्न विचारा</h3>
-
-                                <span>एक निवडा</span>
-
-                            </div>
-
-
-
-                            <div className="quick-grid">
-
-                                <button
-
-                                    onClick={() =>
-
-                                        quickQuestion(
-
-                                            "केळी पिकासाठी योग्य खत कोणते?"
-
-                                        )
-
-                                    }
-
-                                >
-
-                                    <span>🌱</span>
-
-                                    <strong>खत</strong>
-
-                                </button>
-
-
-
-                                <button
-
-                                    onClick={() =>
-
-                                        quickQuestion(
-
-                                            "केळीला किती पाणी द्यावे?"
-
-                                        )
-
-                                    }
-
-                                >
-
-                                    <span>💧</span>
-
-                                    <strong>पाणी</strong>
-
-                                </button>
-
-
-
-                                <button
-
-                                    onClick={() =>
-
-                                        quickQuestion(
-
-                                            "केळीच्या पानांवर पिवळेपणा का येतो?"
-
-                                        )
-
-                                    }
-
-                                >
-
-                                    <span>🍃</span>
-
-                                    <strong>पाने</strong>
-
-                                </button>
-
-
-
-                                <button
-
-                                    onClick={() =>
-
-                                        quickQuestion(
-
-                                            "केळीच्या पिकावर कीड दिसल्यास काय करावे?"
-
-                                        )
-
-                                    }
-
-                                >
-
-                                    <span>🐛</span>
-
-                                    <strong>कीड</strong>
-
-                                </button>
-
-                            </div>
-
-                        </section>
-
-
-
-                        <p className="intro-note">
-
-                            🌱 सोप्या मराठीमध्ये शेतीविषयक मदत
-
-                        </p>
-
-                    </aside>
-
-                )}
-
-
-
-                <section className="chat-panel">
-
-                    <div className="chat-heading">
-
-                        <div className="chat-brand-icon">🌱</div>
-
-                        <div className="chat-heading-copy">
-
-                            <h2>कृषीवाणी सहाय्यक</h2>
-
-                            <p>तुमचे प्रश्न आणि उत्तरे</p>
-
-                        </div>
-
-
-
-                        <div className="chat-heading-actions">
-
-                            {speaking && (
-
-                                <button
-
-                                    className="stop-speaking-button"
-
-                                    onClick={stopSpeaking}
-
-                                >
-
-                                    आवाज थांबवा
-
-                                </button>
-
-                            )}
-
-                            <span className="chat-online">● ऑनलाइन</span>
-
-                        </div>
-
-                    </div>
-
-
-
-                    <div className="messages" aria-live="polite">
-
-                        {messages.map((message, index) => (
-
-                            <div
-
-                                key={index}
-
-                                className={`message-row ${
-
-                                    message.sender === "user"
-
-                                        ? "user-row"
-
-                                        : "bot-row"
-
-                                }`}
-
-                            >
-
-                                {message.sender === "bot" && (
-
-                                    <div className="avatar">🌱</div>
-
-                                )}
-
-
-
-                                <div
-
-                                    className={`message ${
-
-                                        message.sender === "user"
-
-                                            ? "user-message"
-
-                                            : "bot-message"
-
-                                    }`}
-
-                                >
-
-                                    {message.sender === "bot" && (
-
-                                        <strong>कृषीवाणी</strong>
-
-                                    )}
-
-                                    <p>{message.text}</p>
-
-
-
-                                    {message.sender === "bot" && (
-
-                                        <button
-
-                                            className="speak-message-button"
-
-                                            onClick={() =>
-
-                                                speakMarathi(message.text)
-
-                                            }
-
-                                            title="उत्तर ऐका"
-
-                                            aria-label="उत्तर ऐका"
-
-                                        >
-
-                                            🔊 ऐका
-
-                                        </button>
-
-                                    )}
-
-                                </div>
-
-                            </div>
-
-                        ))}
-
-
-
-                        {(loading || imageLoading) && (
-
-                            <div className="message-row bot-row">
-
-                                <div className="avatar">🌱</div>
-
-                                <div className="message bot-message loading">
-
-                                    <span />
-
-                                    <span />
-
-                                    <span />
-
-                                </div>
-
-                            </div>
-
-                        )}
-
-
-
-                        <div ref={messagesEndRef} />
-
-                    </div>
-
-
-
-                    {selectedImage && (
-
-                        <div className="image-preview">
-
-                            <img
-
-                                src={imagePreviewUrl}
-
-                                alt="निवडलेला पिकाचा फोटो"
-
-                            />
-
-                            <span>निवडलेला फोटो</span>
-
-                        </div>
-
-                    )}
-
-
-
-                    {listening && (
-
-                        <div className="listening">
-
-                            🔴 ऐकत आहे... मराठीत बोला
-
-                        </div>
-
-                    )}
-
-
-
-                    <form
-
-                        className="bottom-area"
-
-                        onSubmit={(event) => {
-
-                            event.preventDefault();
-
-                            sendQuestion();
-
-                        }}
-
-                    >
-
-                        <button
-
-                            type="button"
-
-                            className={`mic-button ${
-
-                                listening ? "active" : ""
-
-                            }`}
-
-                            onClick={listening ? stopListening : startListening}
-
-                            disabled={loading}
-
-                            aria-label={listening ? "रेकॉर्डिंग थांबवा" : "बोलून प्रश्न विचारा"}
-
-                            title={listening ? "रेकॉर्डिंग थांबवा" : "बोलून प्रश्न विचारा"}
-
-                        >
-
-                            🎤
-
-                        </button>
-
-
-
-                        <input
-
-                            type="text"
-
-                            value={question}
-
-                            onChange={(event) =>
-
-                                setQuestion(event.target.value)
-
-                            }
-
-                            placeholder="इथे तुमचा प्रश्न लिहा..."
-
-                            aria-label="तुमचा प्रश्न"
-
-                        />
-
-
-
-                        <button
-
-                            type="submit"
-
-                            className="send-button"
-
-                            disabled={loading || !question.trim()}
-
-                            aria-label="प्रश्न पाठवा"
-
-                        >
-
-                            ➤
-
-                        </button>
-
-
-
-                        <button
-
-                            type="button"
-
-                            className="photo-button"
-
-                            onClick={openImagePicker}
-
-                            disabled={imageLoading}
-
-                        >
-
-                            {imageLoading
-
-                                ? "फोटो तपासत आहे..."
-
-                                : "📷 फोटो"}
-
-                        </button>
-
-
-
-                       <input
-                        ref={fileInputRef}
-                        className="hidden-file-input"
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        tabIndex={-1}
-                        aria-label="केळीच्या पिकाचा फोटो निवडा"
-                        />
-
-                    </form>
-
-                </section>
-
-            </main>
-
-
-
-            <footer className="app-footer">
-
-                🌱 कृषीवाणी • केळी शेतीसाठी तुमचा डिजिटल साथीदार
-
-            </footer>
-
+    const quickQuestion = (text) => setQuestion(text);
+
+    return (
+        <div className={`app ${showIntro ? "" : "intro-hidden"}`}>
+            <AppHeader
+                showIntro={showIntro}
+                onShowIntro={() => setShowIntro(true)}
+            />
+            <main className="workspace">
+                {showIntro && (
+                    <IntroPanel
+                        listening={listening}
+                        loading={loading}
+                        imageLoading={imageLoading}
+                        onClose={() => setShowIntro(false)}
+                        onListen={listening ? stopListening : startListening}
+                        onOpenCamera={openCamera}
+                        onQuickQuestion={quickQuestion}
+                    />
+                )}
+                <ChatPanel
+                    messages={messages}
+                    loading={loading}
+                    imageLoading={imageLoading}
+                    listening={listening}
+                    speaking={speaking}
+                    selectedImage={selectedImage}
+                    imagePreviewUrl={imagePreviewUrl}
+                    question={question}
+                    setQuestion={setQuestion}
+                    messagesEndRef={messagesEndRef}
+                    fileInputRef={fileInputRef}
+                    onStopSpeaking={stopSpeaking}
+                    onSpeak={speakMarathi}
+                    onListen={listening ? stopListening : startListening}
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        sendQuestion();
+                    }}
+                    onOpenImagePicker={openImagePicker}
+                    onImageUpload={handleImageUpload}
+                />
+            </main>
+            <footer className="app-footer">
+                🌱 कृषीवाणी • केळी शेतीसाठी तुमचा डिजिटल साथीदार
+            </footer>
             {cameraOpen && (
-                <div className="camera-overlay" role="dialog" aria-modal="true" aria-label="केळीच्या पिकाचा फोटो घ्या">
-                    <div className="camera-modal">
-                        <div className="camera-header">
-                            <h3>📷 पिकाचा फोटो घ्या</h3>
-                            <button type="button" className="close-camera" onClick={closeCamera} aria-label="कॅमेरा बंद करा">×</button>
-                        </div>
-                        <video ref={cameraVideoRef} className="camera-video" autoPlay playsInline muted />
-                        <p className="camera-help">पान स्पष्ट दिसेल असा फोटो घ्या.</p>
-                        <div className="camera-actions">
-                            <button type="button" onClick={openImagePicker} className="camera-gallery-button">गॅलरीमधून निवडा</button>
-                            <button type="button" onClick={capturePhoto} className="camera-capture-button">फोटो घ्या आणि तपासा</button>
-                        </div>
-                    </div>
-                </div>
+                <CameraModal
+                    videoRef={cameraVideoRef}
+                    onClose={closeCamera}
+                    onOpenImagePicker={openImagePicker}
+                    onCapture={capturePhoto}
+                />
             )}
-
-        </div>
-
-    );
+        </div>
+    );
 
 }
-
-
 
 export default App;
