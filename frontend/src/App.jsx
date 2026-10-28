@@ -9,7 +9,28 @@ import IntroPanel from "./components/IntroPanel";
 
 import "./App.css";
 
-const API_URL = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
+// In development the API runs on localhost. In production, set VITE_API_URL to
+// the Render backend URL, or leave it empty when the frontend and API share one domain.
+const API_URL = (
+    import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://localhost:5000" : "")
+).replace(/\/$/, "");
+
+const REQUEST_TIMEOUT_MS = 30_000;
+
+// A slow or unavailable production service should show an error instead of leaving the UI loading forever.
+async function apiFetch(path, options = {}) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+        return await fetch(`${API_URL}${path}`, {
+            ...options,
+            signal: controller.signal
+        });
+    } finally {
+        window.clearTimeout(timeoutId);
+    }
+}
 
 function App() {
 
@@ -79,7 +100,7 @@ function App() {
         stopSpeaking();
         try {
             setSpeaking(true);
-            const response = await fetch(`${API_URL}/api/text-to-speech`, {
+            const response = await apiFetch("/api/text-to-speech", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ text: cleanText })
@@ -187,7 +208,7 @@ function App() {
                 try {
                     const formData = new FormData();
                     formData.append("audio", audioBlob, `krushivani_voice.${extension}`);
-                    const response = await fetch(`${API_URL}/api/speech-to-text`, { method: "POST", body: formData });
+                    const response = await apiFetch("/api/speech-to-text", { method: "POST", body: formData });
                     const data = await response.json();
                     if (!response.ok) throw new Error(data.message || "Speech-to-text failed");
                     if (data.text?.trim()) setQuestion(data.text.trim());
@@ -232,7 +253,7 @@ function App() {
         setLoading(true);
 
         try {
-            const response = await fetch(`${API_URL}/api/chat`, {
+            const response = await apiFetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ question: userQuestion })
@@ -272,7 +293,7 @@ function App() {
         try {
             const formData = new FormData();
             formData.append("image", file);
-            const response = await fetch(`${API_URL}/api/image`, {
+            const response = await apiFetch("/api/image", {
             method: "POST",
             body: formData
         });

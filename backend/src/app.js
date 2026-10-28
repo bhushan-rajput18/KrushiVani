@@ -18,8 +18,11 @@ app.use(express.json());
 
 app.use("/api/faqs", faqRoutes);
 app.use("/api/chat", chatRoutes);
-app.use("/api/image", imageRoutes);
-app.use("/api/image-deploy", imageRoutesDeploy);
+
+// Local development runs Python on this machine. Render uses the separate
+// KrushiVani_ML service when ML_API_URL is configured.
+const imageAnalysisRoutes = process.env.ML_API_URL ? imageRoutesDeploy : imageRoutes;
+app.use("/api/image", imageAnalysisRoutes);
 app.use("/api/speech-to-text", speechToTextRoutes);
 app.use("/api/text-to-speech", textToSpeechRoutes);
 

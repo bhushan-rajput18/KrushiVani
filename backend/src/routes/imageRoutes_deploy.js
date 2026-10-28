@@ -9,6 +9,15 @@ const upload = multer({
 
 router.post("/", upload.single("image"), async (req, res) => {
     try {
+        if (!process.env.ML_API_URL) {
+            return res.status(503).json({
+                message: "Image analysis service is not configured"
+            });
+        }
+
+        // Read this during the request, after dotenv has loaded the Render environment.
+        const mlPredictUrl = `${process.env.ML_API_URL.replace(/\/$/, "")}/predict`;
+
         if (!req.file) {
             return res.status(400).json({
                 message: "Image is required"
@@ -26,10 +35,10 @@ router.post("/", upload.single("image"), async (req, res) => {
         );
 
 
-console.log("ML request URL:", `${process.env.ML_API_URL}/predict`);
+        console.log("Sending image to ML service");
 
-       const response = await fetch(
-    `${process.env.ML_API_URL}/predict`,
+        const response = await fetch(
+            mlPredictUrl,
             {
                 method: "POST",
                 body: formData
